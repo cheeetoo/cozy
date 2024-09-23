@@ -38,18 +38,18 @@ def init_weights(cfg: GPTConfig, key: Array):
     init = jax.nn.initializers.he_normal()
     d_head = cfg.d_model // cfg.n_heads
     k_emb, k_layers, k_head = jax.random.split(key, 3)
-    k_wq, k_wk, k_wv, k_wo, k_w1, k_w2, k_w3 = jax.random.split(k_layers, 4)
+    k_wq, k_wk, k_wv, k_wo, k_w1, k_w2, k_w3 = jax.random.split(k_layers, 7)
     with jax.default_device(jax.devices("cpu")[0]):
         layer_params = LayerParams(
             norm_attn=jnp.ones((cfg.n_blocks, cfg.d_model)),
-            wq_chd=init(k_wq, ((cfg.d_model, cfg.n_heads, d_head))),
-            wk_chd=init(k_wk, ((cfg.d_model, cfg.n_heads, d_head))),
-            wv_chd=init(k_wv, ((cfg.d_model, cfg.n_heads, d_head))),
-            wo_hdc=init(k_wo, ((cfg.n_heads, d_head, cfg.d_model))),
+            wq_chd=init(k_wq, ((cfg.n_blocks, cfg.d_model, cfg.n_heads, d_head))),
+            wk_chd=init(k_wk, ((cfg.n_blocks, cfg.d_model, cfg.n_heads, d_head))),
+            wv_chd=init(k_wv, ((cfg.n_blocks, cfg.d_model, cfg.n_heads, d_head))),
+            wo_hdc=init(k_wo, ((cfg.n_blocks, cfg.n_heads, d_head, cfg.d_model))),
             norm_mlp=jnp.ones((cfg.n_blocks, cfg.d_model)),
-            w1=init(k_w1, ((cfg.d_model, cfg.d_mlp))),
-            w2=init(k_w2, ((cfg.d_mlp, cfg.d_model))),
-            w3=init(k_w3, ((cfg.d_model, cfg.d_mlp))),
+            w1=init(k_w1, ((cfg.n_blocks, cfg.d_model, cfg.d_mlp))),
+            w2=init(k_w2, ((cfg.n_blocks, cfg.d_mlp, cfg.d_model))),
+            w3=init(k_w3, ((cfg.n_blocks, cfg.d_model, cfg.d_mlp))),
         )
         params = Params(
             tok_emb=init(k_emb, (cfg.n_vocab, cfg.d_model)),
@@ -75,8 +75,8 @@ def attn(x: Array, wq_chd: Array, wk_chd: Array, wv_chd: Array, wo_hdc: Array) -
     v_blhd = jnp.einsum("...c,chd->...hd", x, wv_chd)
     logits_bhlt = jnp.einsum("blhd,bthd->bhlt", q_blhd, k_blhd) / jnp.sqrt(c)
     mask = jnp.triu(jnp.full((l, l), -jnp.inf), k=1)
-    scores_blht = jax.nn.softmax(logits_bhlt + mask, -1)
-    out_bhld = jnp.einsum("blht,blhd->bhtd", scores_blht, v_blhd)
+    scores_bhlt = jax.nn.softmax(logits_bhlt + mask, -1)
+    out_bhld = jnp.einsum("bhlt,blhd->bhtd", scores_bhlt, v_blhd)
     out_blc = jnp.einsum("bhld,hdc->blc", out_bhld, wo_hdc)
     return out_blc
 
