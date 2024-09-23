@@ -5,8 +5,8 @@ from jax.tree_util import tree_map
 
 
 def get_adamw_state(params):
-    m = tree_map(jnp.zeros_like, params)
-    v = tree_map(jnp.zeros_like, params)
+    m = tree_map(lambda x: jax.device_put(jnp.zeros_like(x), x.sharding), params)
+    v = tree_map(lambda x: jax.device_put(jnp.zeros_like(x), x.sharding), params)
     return m, v
 
 
@@ -35,4 +35,3 @@ def adamw(params, grads, m, v, t, wd, lr=0.001, b1=0.9, b2=0.99, eps=1e-8):
     )
 
     return params, m, v
-
