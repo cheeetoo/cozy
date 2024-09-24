@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
 from typing import NamedTuple
+from einops import repeat
 
 
 @dataclass
@@ -78,11 +79,18 @@ def mlp(x: Array, w1: Array, w2: Array, w3: Array) -> Array:
 
 def attn(x: Array, wq_chd: Array, wk_chd: Array, wv_chd: Array, wo_hdc: Array) -> Array:
     _, l, c = x.shape  # noqa: E741
+
     q_bhld = jnp.einsum("blc,chd->bhld", x, wq_chd)
     k_bhld = jnp.einsum("blc,chd->bhld", x, wk_chd)
     v_bhld = jnp.einsum("blc,chd->bhld", x, wv_chd)
+
     q_bhld, k_bhld = rope(q_bhld), rope(k_bhld)
-    logits_bhlt = jnp.einsum("...ld,...td->...lt", q_bhld, k_bhld) / jnp.sqrt(c)
+
+    n_reps = q_bhld.shape[1] // k_bhld.shape[1]
+    k_bhld = repeat(k_bhld, "b h l d -> b (h r) l d", r=n_reps)
+    v_bhld = repeat(v_bhld, "b h l d -> b (h r) l d", r=n_reps)
+
+    logits_bhlt = jnp.einsum("...ld,...td->...lt", q_bhld, k_bhld) / c
     mask = jnp.triu(jnp.full((l, l), -jnp.inf), k=1)
     scores_bhlt = jax.nn.softmax(logits_bhlt + mask, -1)
     out_bhld = jnp.einsum("...lt,...ld->...td", scores_bhlt, v_bhld)

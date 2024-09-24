@@ -1,6 +1,6 @@
 import jax
 from jax import numpy as jnp
-from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
+from jax.sharding import Mesh
 from functools import partial
 import time
 import numpy as np
@@ -17,25 +17,21 @@ cfg = GPTConfig(
     d_model=1024,
     n_blocks=24,
     n_heads=16,
-    n_kv_heads=16,
+    n_kv_heads=8,
     d_mlp=4096,
 )
 params = init_weights(cfg, jax.random.PRNGKey(42))
-
 params = shard_params(params, mesh)
 
-m, v = get_adamw_state(params)
-# m, v = jax.tree.map(jnp.zeros_like, params), jax.tree.map(jnp.zeros_like, params)
+m, v = get_adamw_state(params, mesh)
 
-# Create and shard the input data
 inp = jnp.ones((8, 512), dtype=int)
 inp = jax.device_put(inp, get_sharding(inp, mesh))
 
-# Get sharding specifications for params and inp
 params_shardings = jax.tree.map(lambda x: x.sharding, params)
-inp_sharding = inp.sharding
 
 
+@jax.value_and_grad
 def loss_fn(params, inp):
     logits = transformer(params, inp)[:, :-1]
     pred = jax.nn.softmax(logits, axis=-1)
@@ -44,20 +40,19 @@ def loss_fn(params, inp):
     return loss
 
 
-# Define the training step function with jax.jit
 @partial(
     jax.jit,
-    in_shardings=(
+    in_shardings=(  # type: ignore
         params_shardings,
         params_shardings,
         params_shardings,
-        inp_sharding,
+        inp.sharding,
         None,
     ),
-    out_shardings=(params_shardings, params_shardings, params_shardings, None),
+    out_shardings=(params_shardings, params_shardings, params_shardings, None),  # type: ignore
 )
 def train_step(params, m, v, inp, t):
-    loss, grads = jax.value_and_grad(loss_fn)(params, inp)
+    loss, grads = loss_fn(params, inp)
     params, m, v = adamw(params, grads, m, v, t, wd=1e-5, lr=3e-4)
     return params, m, v, loss
 
