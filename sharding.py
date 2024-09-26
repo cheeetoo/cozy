@@ -10,7 +10,7 @@ def get_sharding(x, mesh):
 
 
 def shard_params(params, mesh):
-    return sharded_map(lambda x: x, mesh, params)
+    return sharded_map(lambda x: x, params, mesh)
 
 
 def sharded_map(map_fn, pytree, mesh):
