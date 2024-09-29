@@ -1,9 +1,12 @@
 from jax import Array
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 from dataclasses import dataclass
 from typing import NamedTuple
-from einops import repeat
+
+from ops import norm, mlp, attn
+from config import AxisNames
 
 
 @dataclass
@@ -35,7 +38,25 @@ class Params(NamedTuple):
     head: Array
 
 
-def init_weights(cfg: GPTConfig, key: Array):
+shardings = Params(
+    tok_emb=P(None, AxisNames.tp),
+    layers=LayerParams(
+        norm_attn=P(None, None),
+        wq_chd=P(None, None, None, AxisNames.tp),
+        wk_chd=P(None, None, None, AxisNames.tp),
+        wv_chd=P(None, None, None, AxisNames.tp),
+        wo_hdc=P(None, None, None, AxisNames.tp),
+        w1=P(None, None, AxisNames.tp),
+        w2=P(None, None, AxisNames.tp),
+        w3=P(None, None, AxisNames.tp),
+        norm_mlp=P(None, None),
+    ),
+    norm=P(None),
+    head=P(None, AxisNames.tp),
+)
+
+
+def init_weights(cfg: GPTConfig, key: Array, dtype: jnp.dtype = jnp.float32):
     init = jax.nn.initializers.he_normal()
     d_head = cfg.d_model // cfg.n_heads
     k_emb, k_layers, k_head = jax.random.split(key, 3)
@@ -58,53 +79,16 @@ def init_weights(cfg: GPTConfig, key: Array):
             norm=jnp.ones((cfg.d_model)),
             head=init(k_head, (cfg.d_model, cfg.n_vocab)),
         )
-    return params
-
-
-def rope(x: Array, theta: int = 10_000):
-    _, _, t, d = x.shape
-    emb = jnp.arange(t)[:, None] / (theta ** (jnp.arange(0, d, 2)[None, :] / d))
-    cos, sin = jnp.tile(jnp.cos(emb), 2), jnp.tile(jnp.sin(emb), 2)
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    return jnp.concat((x1, x2), axis=-1) * cos + jnp.concat((-x2, x1), axis=-1) * sin
-
-
-def norm(x: Array, w: Array, eps: float = 1e-6) -> Array:
-    return w * (x * jax.lax.rsqrt(jax.lax.pow(x, 2).mean(-1, keepdims=True) + eps))
-
-
-def mlp(x: Array, w1: Array, w2: Array, w3: Array) -> Array:
-    return jnp.dot(jax.nn.silu(jnp.dot(x, w1)) * jnp.dot(x, w3), w2)
-
-
-def attn(x: Array, wq_chd: Array, wk_chd: Array, wv_chd: Array, wo_hdc: Array) -> Array:
-    _, l, c = x.shape  # noqa: E741
-
-    q_bhld = jnp.einsum("blc,chd->bhld", x, wq_chd)
-    k_bhld = jnp.einsum("blc,chd->bhld", x, wk_chd)
-    v_bhld = jnp.einsum("blc,chd->bhld", x, wv_chd)
-
-    q_bhld, k_bhld = rope(q_bhld), rope(k_bhld)
-
-    n_reps = q_bhld.shape[1] // k_bhld.shape[1]
-    k_bhld = repeat(k_bhld, "b h l d -> b (h r) l d", r=n_reps)
-    v_bhld = repeat(v_bhld, "b h l d -> b (h r) l d", r=n_reps)
-
-    logits_bhlt = jnp.einsum("...ld,...td->...lt", q_bhld, k_bhld) / c
-    mask = jnp.triu(jnp.full((l, l), -jnp.inf), k=1)
-    scores_bhlt = jax.nn.softmax(logits_bhlt + mask, -1)
-    out_bhld = jnp.einsum("...lt,...ld->...td", scores_bhlt, v_bhld)
-    out_blc = jnp.einsum("bhld,hdc->blc", out_bhld, wo_hdc)
-    return out_blc
+    return jax.tree.map(lambda p: p.astype(dtype), params)
 
 
 def transformer(params: Params, toks: Array):
     x = params.tok_emb[toks]
 
     def f(x: Array, layer: LayerParams):
-        h = norm(x, layer.norm_attn)
+        h = norm(x.astype(jnp.float32), layer.norm_attn).astype(x.dtype)
         x = x + attn(h, layer.wq_chd, layer.wk_chd, layer.wv_chd, layer.wo_hdc)
-        h = norm(x, layer.norm_mlp)
+        h = norm(x.astype(jnp.float32), layer.norm_mlp).astype(x.dtype)
         x = x + mlp(x, layer.w1, layer.w2, layer.w3)
         return x, None
 

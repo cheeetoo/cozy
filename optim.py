@@ -1,11 +1,10 @@
 import jax
 import jax.numpy as jnp
-from sharding import sharded_map
 
 
-def get_adamw_state(params, mesh):
-    m = sharded_map(jnp.zeros_like, params, mesh)
-    v = sharded_map(jnp.zeros_like, params, mesh)
+def get_adamw_state(params):
+    m = jax.tree.map(lambda x: jnp.zeros_like(x).astype(x.dtype), params)
+    v = jax.tree.map(lambda x: jnp.zeros_like(x).astype(x.dtype), params)
     return m, v
 
 
