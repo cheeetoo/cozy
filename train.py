@@ -2,17 +2,15 @@ import time
 from functools import partial
 
 import jax
-import numpy as np
 from jax import numpy as jnp
-from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
+from jax.sharding import NamedSharding, PartitionSpec as P
 
-from config import AxisNames
+from config import AxisNames, mesh
 from model import GPTConfig, init_weights, transformer, shardings
 from optim import adamw, get_adamw_state
 from sharding import shard_params
 
 devices = jax.devices()
-mesh = Mesh(np.array(devices).reshape(2, 4), (AxisNames.dp, AxisNames.tp))
 
 n_vocab = 12_000
 cfg = GPTConfig(
