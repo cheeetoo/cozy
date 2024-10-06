@@ -1,5 +1,4 @@
 ### todo
-- [ ] use `with_sharding_constraint`
 - [ ] splash attention
 - [ ] soap
 - [ ] μp
