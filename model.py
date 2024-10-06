@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from ops import norm, mlp, attn
-from config import AxisNames
+from utils import AxisNames
 
 
 @dataclass
