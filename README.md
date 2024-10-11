@@ -1,5 +1,5 @@
 ### todo
-- [ ] splash attention
+- [ ] complex rope
 - [ ] soap
 - [ ] μp
 - [ ] dataloading (grain)

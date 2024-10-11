@@ -1,5 +1,5 @@
 import jax
-from jax.sharding import PartitionSpec as P, NamedSharding
+from jax.sharding import NamedSharding
 
 
 def shard_params(params, shardings, mesh):
