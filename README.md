@@ -1,5 +1,4 @@
 ### todo
-- [ ] complex rope
 - [ ] soap
 - [ ] μp
 - [ ] dataloading (grain)

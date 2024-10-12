@@ -82,12 +82,14 @@ def init_weights(cfg: GPTConfig, key: Array, dtype: jnp.dtype = jnp.float32):
     return jax.tree.map(lambda p: p.astype(dtype), params)
 
 
-def transformer(params: Params, toks: Array):
+def transformer(params: Params, toks: Array, freqs_cis: Array):
     x = params.tok_emb[toks]
 
     def f(x: Array, layer: LayerParams):
         h = norm(x.astype(jnp.float32), layer.norm_attn).astype(x.dtype)
-        x = x + attn(h, layer.wq_chd, layer.wk_chd, layer.wv_chd, layer.wo_hdc)
+        x = x + attn(
+            h, layer.wq_chd, layer.wk_chd, layer.wv_chd, layer.wo_hdc, freqs_cis
+        )
         h = norm(x.astype(jnp.float32), layer.norm_mlp).astype(x.dtype)
         x = x + mlp(x, layer.w1, layer.w2, layer.w3)
         return x, None

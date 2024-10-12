@@ -7,17 +7,19 @@ from jax.sharding import NamedSharding, PartitionSpec as P
 
 from utils import AxisNames, mesh
 from model import GPTConfig, init_weights, transformer, shardings
+from ops import precompute_freqs_cis
 from optim import adamw, get_adamw_state
 from sharding import shard_params
 
-devices = jax.devices()
-
 n_vocab = 12_000
+d_model = 1024
+n_heads = 8
+d_head = d_model // n_heads
 cfg = GPTConfig(
     n_vocab=n_vocab,
-    d_model=1024,
+    d_model=d_model,
     n_blocks=16,
-    n_heads=8,
+    n_heads=n_heads,
     n_kv_heads=4,
     d_mlp=4096,
 )
@@ -26,15 +28,18 @@ params = shard_params(params, shardings, mesh)
 
 m, v = get_adamw_state(params)
 
-inp = jnp.ones((2, 4096), dtype=int)
+seqlen = 4096
+inp = jnp.ones((2, seqlen), dtype=int)
 inp = jax.device_put(inp, NamedSharding(mesh, P(AxisNames.dp, AxisNames.tp)))
 
 params_shardings = jax.tree.map(lambda x: x.sharding, params)
 
+freqs_cis = precompute_freqs_cis(d_head, seqlen)
+
 
 @jax.value_and_grad
 def loss_fn(params, inp):
-    logits = transformer(params, inp)[:, :-1].astype(jnp.float32)
+    logits = transformer(params, inp, freqs_cis)[:, :-1].astype(jnp.float32)
     pred = jax.nn.softmax(logits, axis=-1)
     labels = jax.nn.one_hot(inp[:, 1:], num_classes=n_vocab)
     loss = -(labels * jnp.log(pred)).sum(-1).mean()
