@@ -52,8 +52,6 @@ def attn(
     wo_hdc: Array,
     freqs_cis: Array,
 ) -> Array:
-    b, l, c = x.shape  # noqa: E741
-
     q_bhld = jnp.einsum("blc,chd->bhld", x, wq_chd).astype(jnp.float32)
     k_bhld = jnp.einsum("blc,chd->bhld", x, wk_chd).astype(jnp.float32)
     v_bhld = jnp.einsum("blc,chd->bhld", x, wv_chd).astype(jnp.float32)
